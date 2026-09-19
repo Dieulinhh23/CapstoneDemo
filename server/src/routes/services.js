@@ -1,17 +1,21 @@
 import express from 'express';
-import { query } from '../db.js';
+import { supabase } from '../db.js';
 
 const router = express.Router();
 
+const COLUMNS = 'id, name, description, price_cents, duration_minutes, created_at';
+
 router.get('/', async (_req, res) => {
-  try {
-    const result = await query(
-      'SELECT id, name, description, price_cents, duration_minutes, created_at FROM services ORDER BY created_at DESC'
-    );
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch services', error: error.message });
+  const { data, error } = await supabase
+    .from('services')
+    .select(COLUMNS)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ message: 'Failed to fetch services', error: error.message });
   }
+
+  res.json(data);
 });
 
 router.post('/', async (req, res) => {
@@ -21,64 +25,66 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ message: 'Name, price_cents, and duration_minutes are required.' });
   }
 
-  try {
-    const result = await query(
-      `
-        INSERT INTO services (name, description, price_cents, duration_minutes)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id, name, description, price_cents, duration_minutes, created_at
-      `,
-      [name, description ?? '', Number(price_cents), Number(duration_minutes)]
-    );
+  const { data, error } = await supabase
+    .from('services')
+    .insert({ name, description: description ?? '', price_cents, duration_minutes })
+    .select(COLUMNS)
+    .single();
 
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to create service', error: error.message });
+  if (error) {
+    return res.status(500).json({ message: 'Failed to create service', error: error.message });
   }
+
+  res.status(201).json(data);
 });
 
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { name, description, price_cents, duration_minutes } = req.body ?? {};
 
-  try {
-    const result = await query(
-      `
-        UPDATE services
-        SET name = COALESCE($1, name),
-            description = COALESCE($2, description),
-            price_cents = COALESCE($3, price_cents),
-            duration_minutes = COALESCE($4, duration_minutes)
-        WHERE id = $5
-        RETURNING id, name, description, price_cents, duration_minutes, created_at
-      `,
-      [name ?? null, description ?? null, price_cents ?? null, duration_minutes ?? null, id]
-    );
+  const updates = {};
+  if (name !== undefined) updates.name = name;
+  if (description !== undefined) updates.description = description;
+  if (price_cents !== undefined) updates.price_cents = price_cents;
+  if (duration_minutes !== undefined) updates.duration_minutes = duration_minutes;
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Service not found.' });
-    }
+  const { data, error } = await supabase
+    .from('services')
+    .update(updates)
+    .eq('id', id)
+    .select(COLUMNS)
+    .maybeSingle();
 
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to update service', error: error.message });
+  if (error) {
+    return res.status(500).json({ message: 'Failed to update service', error: error.message });
   }
+
+  if (!data) {
+    return res.status(404).json({ message: 'Service not found.' });
+  }
+
+  res.json(data);
 });
 
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
-  try {
-    const result = await query('DELETE FROM services WHERE id = $1 RETURNING id', [id]);
+  const { data, error } = await supabase
+    .from('services')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Service not found.' });
-    }
-
-    res.json({ message: 'Service deleted successfully.' });
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to delete service', error: error.message });
+  if (error) {
+    return res.status(500).json({ message: 'Failed to delete service', error: error.message });
   }
+
+  if (!data) {
+    return res.status(404).json({ message: 'Service not found.' });
+  }
+
+  res.json({ message: 'Service deleted successfully.' });
 });
 
 export default router;

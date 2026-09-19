@@ -7,7 +7,7 @@ const port = Number(process.env.PORT || 4000);
 async function startServer() {
   try {
     await testDbConnection();
-    console.log('PostgreSQL connected successfully.');
+    console.log('Supabase connected successfully.');
 
     app.listen(port, () => {
       console.log(`Server listening on http://localhost:${port}`);
